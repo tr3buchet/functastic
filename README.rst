@@ -121,10 +121,11 @@ run loop in another thread and add tasks willy nilly while they run
     tasks.append(functastic.Task(usually_fails, args=['b'], attempts=10, delay=1))
 
     # have to sleep here to surrender execution to the loop's thread
-    while True:
+    while tasks:
         gevent.sleep()
 
-``TaskHeap`` is also iterable and ``str(tasks)`` gives a pretty good output
+``TaskHeap`` is also iterable and works as a ``bool`` and ``str(tasks)`` gives
+a pretty good output
 
 .. code:: python
 
@@ -132,10 +133,11 @@ run loop in another thread and add tasks willy nilly while they run
     tasks = functastic.TaskHeap()
     tasks.append(functastic.Task(usually_fails, args=['a'], delay=1))
     tasks.append(functastic.Task(usually_fails, args=['b'], attempts=10, delay=1))
-    print len(tasks)
-    print str(tasks)
-    for task in tasks:
-        print task
+    if tasks:
+        print len(tasks)
+        print str(tasks)
+        for task in tasks:
+            print task
 
 
 install

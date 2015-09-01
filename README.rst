@@ -12,6 +12,12 @@ running/scheduling/retrying the ``Tasks`` until the success condition is met.
 ``Task's`` default success condition is that the function does not raise any
 Exception and returns a non ``None`` value.
 
+it is important to note that a ``Task`` object can never raise an exception.
+calling a task either manually or using a ``TaskHeap`` will log exceptions
+and potentially use them to determine success, but they won't be raised. the
+one exception to this rule is if your custom ``success_condition`` function
+raises an exception, so be careful writing them.
+
 usage
 ~~~~~
 the basic task is a wrapped function that has some attributes for
@@ -36,38 +42,38 @@ here are a few examples of what can be done with tasks
 
 .. code:: python
 
-    import functastic
+    from functastic import Task
     import time
     f = some_function
     # this is the basic task, some_function will be retried as quickly as possible
     # until it returns a non None value and doesn't raise
-    task = functastic.Task(f, args['a'])
+    task = Task(f, args['a'])
 
     # let's give it only 10 tries
-    task = functastic.Task(f, args['a'], attempts=10)
+    task = Task(f, args['a'], attempts=10)
 
     # and slow it down a bit (wait 1 second between each attempt)
-    task = functastic.Task(f, args['a'], attempts=10, delay=1)
+    task = Task(f, args['a'], attempts=10, delay=1)
 
     # and now let's make it backoff if at first it doesn't succeed
     # this will be run at t=[0, 1, 2, 4, 8, 16, 32, 64, 128, 256] seconds
-    task = functastic.Task(f, args['a'], attempts=10, delay=1, backoff=2)
+    task = Task(f, args['a'], attempts=10, delay=1, backoff=2)
 
     # another way to think of a task only having a certain number of attempts
     # is to give it a timeout
     # this function will be run every 1 second for 60 seconds
-    task = functastic.Task(f, args['a'], task_timeout=60, delay=1)
+    task = Task(f, args['a'], task_timeout=60, delay=1)
 
     # want to schedule a task to start running 60 seconds from now?
     # note that the task_timeout doesn't start counting until the first run
     # so this function will start running in 60 seconds and retry every 1
     # second for 30 seconds
-    task = functastic.Task(f, args['a'], start_time=time.time()+60, delay=1,
-                           task_timeout=30))
+    task = Task(f, args['a'], start_time=time.time()+60, delay=1,
+                task_timeout=30))
 
     # define your own success condition for a task
-    task = functastic.Task(f, args['a'], delay=1,
-                           success_condition=lambda t: t.result == 'a')
+    task = Task(f, args['a'], delay=1,
+                success_condition=lambda t: t.result == 'a')
     # or change it later
     task.success_condition = lambda t: t.result == 'b'
     # you could also define a more involved function instead of lambdas
@@ -75,11 +81,10 @@ here are a few examples of what can be done with tasks
         if 'some key' in task.result:
             return True
 
-    task = functastic.Task(f, args['a'], delay=1,
-                           success_condition=success)
+    task = Task(f, args['a'], delay=1, success_condition=success)
 
     # Tasks can be used independently of a TaskHeap
-    task = functastic.Task(f, args['a'], attempts=10)
+    task = Task(f, args['a'], attempts=10)
     while task.retry:
         task()
         time.sleep(2)
@@ -102,11 +107,12 @@ run a task or set of tasks and wait for them to finish
 
 .. code:: python
 
-    import functastic
+    from functastic import Task
+    from functastic import TaskHeap
     # add tasks and then run loop(stop=True)
-    tasks = functastic.TaskHeap()
-    tasks.append(functastic.Task(usually_fails, args=['a'], delay=1))
-    tasks.append(functastic.Task(usually_fails, args=['b'], attempts=10, delay=1))
+    tasks = TaskHeap()
+    tasks.append(Task(usually_fails, args=['a'], delay=1))
+    tasks.append(Task(usually_fails, args=['b'], attempts=10, delay=1))
     tasks.loop(stop=True)
 
 run loop in another thread and add tasks willy nilly while they run
@@ -114,11 +120,15 @@ run loop in another thread and add tasks willy nilly while they run
 .. code:: python
 
     import gevent
-    import functastic
-    tasks = functastic.TaskHeap(sleep=gevent.sleep)
+    from functastic import Task
+    from functastic import TaskHeap
+    # note the use of gevent.sleep here to specify calling gevent.sleep
+    # instead of time.sleep
+    # interval can also be passed if you don't like the default 0.01s
+    tasks = TaskHeap(sleep=gevent.sleep)
     gevent.spawn(tasks.loop)
-    tasks.append(functastic.Task(usually_fails, args=['a'], delay=1))
-    tasks.append(functastic.Task(usually_fails, args=['b'], attempts=10, delay=1))
+    tasks.append(Task(usually_fails, args=['a'], delay=1))
+    tasks.append(Task(usually_fails, args=['b'], attempts=10, delay=1))
 
     # have to sleep here to surrender execution to the loop's thread
     while tasks:
@@ -129,10 +139,11 @@ a pretty good output
 
 .. code:: python
 
-    import functastic
-    tasks = functastic.TaskHeap()
-    tasks.append(functastic.Task(usually_fails, args=['a'], delay=1))
-    tasks.append(functastic.Task(usually_fails, args=['b'], attempts=10, delay=1))
+    from functastic import Task
+    from functastic import TaskHeap
+    tasks = TaskHeap()
+    tasks.append(Task(usually_fails, args=['a'], delay=1))
+    tasks.append(Task(usually_fails, args=['b'], attempts=10, delay=1))
     if tasks:
         print len(tasks)
         print str(tasks)

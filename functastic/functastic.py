@@ -135,6 +135,7 @@ class Task(object):
             self.result = self._func(*self._args, **self._kwargs)
         except Exception as e:
             self.exception = e
+            LOG.exception(e)
 
         self.retry = False
         if not self.success_condition(self):

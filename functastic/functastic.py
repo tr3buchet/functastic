@@ -112,7 +112,7 @@ class Task(object):
         self.success_condition = (success_condition or
                                   self.default_success_condition)
         self.next_run_at = self._start_time
-        self.retry = False
+        self.retry = True
 
     def __str__(self):
         s = ('%s<func=%s (%s, %s), attempts_left=%s, '

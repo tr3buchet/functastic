@@ -141,8 +141,11 @@ class Task(object):
         if not self.success_condition(self):
             self.retry = True
             self._attempts_left = self._attempts_left - 1
-            self.next_run_at = self.next_run_at + self._delay
-            self._delay = self._delay * self._backoff
+            if self._delay > 0:
+                self.next_run_at = self.next_run_at + self._delay
+                self._delay = self._delay * self._backoff
+            else:
+                self.next_run_at = time.time()
             LOG.warn('task attempt failed: %s' % self)
             if self._attempts_left == 0:
                 LOG.error('task attempts exhausted: %s' % self)

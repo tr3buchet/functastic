@@ -40,17 +40,30 @@ class TaskHeap(object):
                   loop() will run any ready tasks each iteration and then sleep
                   for interval before seeing if more tasks ar ready
 
+
         """
         self.tasks = []
         self.sleep = sleep
         self.interval = interval
 
-    def loop(self, stop=False):
+        # _stop: if True, loop will exit after current iteration.
+        #        use to stop the loop as soon as possible. if a task is
+        #        currently running, it will be finished before returning
+        # _stop_after_tasks: if True, loop will exit once self.tasks is empty.
+        #                    use to stop the loop once all tasks are complete
+        self._stop_now = False
+        self._stop_after = False
+
+    def run(self, stop=False):
         """
         stop: if stop is True, loop() will return when there are no more tasks
               if stop is False, loop() runs forever waiting for new tasks
+
+        loop will return immediately if self.is_active is set to False
         """
-        while not stop or (stop and self.tasks):
+        self._stop_after = stop
+        self._stop_now = False
+        while not self._stop_now and (not self._stop_after or self.tasks):
             if self.tasks and time.time() >= self.tasks[0].next_run_at:
                 task = heapq.heappop(self.tasks)
                 task()
@@ -59,9 +72,16 @@ class TaskHeap(object):
             else:
                 self.sleep(self.interval)
 
+    def stop_after(self):
+        self._stop_after = True
+
+    def stop_now(self):
+        self._stop_now = True
+
     def __str__(self):
-        s = '%s<sleep=%s, interval=%s, tasks=%s>'
-        return s % (self.sleep, self.interval, [str(t) for t in self.tasks])
+        s = 'functastic.TaskHeap <sleep=%s.%s, interval=%s, tasks=%s>'
+        return s % (self.sleep.__module__, self.sleep.__name__, self.interval,
+                    [str(t) for t in self.tasks])
 
     def __iter__(self):
         return iter(self.tasks)

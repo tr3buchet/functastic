@@ -94,9 +94,14 @@ class TaskHeap(object):
 
 
 class Task(object):
+    @staticmethod
+    def default_success_condition(task):
+        return (task.result is not None and task.exception is None)
+
     def __init__(self, func, args=None, kwargs=None, attempts=0,
                  task_timeout=None, delay=0, backoff=1,
-                 start_time=None, success_condition=None):
+                 start_time=None,
+                 success_condition=default_success_condition.__func__):
         """
         func: the function this task will run
         args: args to func
@@ -112,10 +117,15 @@ class Task(object):
                  iteration. delay 1 backoff 2 is 1 2 4 8 16 32..
         start_time: the timestamp at which func will run the first time
                     defaults to now. ex `time.time() + 10` is 10s from now
-        success_condition: function used to determine whether a task run was
-                           successful. detaults to no exceptions raised and
-                           any non None return value.
+        success_condition: function taking task as an argument used to
+                           determine whether a task run was successful. if what
+                           you pass in is not callable, an exception will be
+                           raised. task.result and task.exception are usable
+                           within the function.
+                           detaults to no exceptions raised and any non None
+                           return value.
                            ex `lambda task: task.result == 'success'`
+                           ex `lambda task: None`  <-- task never succeeds
         """
         self._start_time = start_time or time.time()
         self._attempts_left = attempts
@@ -129,8 +139,13 @@ class Task(object):
 
         self.result = None
         self.exception = None
-        self.success_condition = (success_condition or
-                                  self.default_success_condition)
+
+        # success condition must be callable
+        if hasattr(success_condition, '__call__'):
+            self.success_condition = success_condition
+        else:
+            raise Exception('Task success_condition must be callable')
+
         self.next_run_at = self._start_time
         self.retry = True
 
@@ -174,6 +189,3 @@ class Task(object):
                 LOG.error('task timed out: %s' % self)
                 self.retry = False
 
-    @staticmethod
-    def default_success_condition(task):
-        return (task.result is not None and task.exception is None)

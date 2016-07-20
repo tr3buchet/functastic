@@ -3,7 +3,7 @@ functastic is used to manage tasks that you would like to retry until a success 
 
 functastic provides two classes: `TaskHeap` and `Task`. `Tasks` wrap a function and are appended to the `TaskHeap` which provides a `run()` function handle running/scheduling/retrying the `Tasks` until the success condition is met. `Task's` default success condition is that the function does not raise any Exception and returns any non `None` value.
 
-a `Task` object can never raise an exception. calling a task either manually or using a `TaskHeap` will log exceptions and potentially use them to determine success, but they won't be raised. the one exception to this rule is if your custom `success_condition` function raises an exception, so be careful writing them.
+calling a `Task` object can never raise an exception. calling a task either manually or using a `TaskHeap` will only log exceptions and potentially use them to determine success, but they won't be raised. the one exception to this rule is if your custom `success_condition` function raises an exception, so be careful writing them. `Task` will also raise on initialization if you provide a `success_condition` that isn't callable.
 
 
 ## install
@@ -11,7 +11,7 @@ a `Task` object can never raise an exception. calling a task either manually or 
 
 
 ## `Task` usage
-the basic task is a wrapped function that has some attributes for determining success and when a function should be run. The configurable traits for a task include:
+the basic task is a wrapped function that has some attributes for determining success and when a function should be run. note that anything to do with scheduled times, delays, or timeouts are "best try". long running tasks can get in the way of the task schedule. the configurable traits for a task include:
 
 -   `func`, the function to be run
 -   `args`, list of args to pass to the function
@@ -21,24 +21,25 @@ the basic task is a wrapped function that has some attributes for determining su
 -   `delay`, the time in between each run of the function (modified by backoff)
 -   `backoff`, delay multiplier, extends the delay exponentially each iteration. `backoff = 1` is standard interval, `backoff = 2` doubles the time in between each retry
 -   `start_time`, the timestamp at which the function will be run the first time ex `time.time() + 30` run 30 seconds from now
--   `success condition`, function used to determine whether the task was successful this iteration. defaults to no exceptions raised and a non None return value
+-   `success_condition`, function used to determine whether the task was successful this iteration. defaults to no exceptions raised and a non None return value. an exception will be raised during `Task` init if `success_condition` isn't callable
 
-here are a few examples of what can be done with tasks
+here are a few examples of creating tasks.
 
 ```python
 from functastic import Task
 import time
 f = some_function
-# this is the basic task, some_function will be retried as often as possible
+# this is the basic task, it will have retry set to True
 # until it returns a non None value and doesn't raise
 task = Task(f, args['a'])
 
-# let's give it only 10 tries
+# let's give it only 10 tries. after 10 tries, retry will be set to False
 task = Task(f, args['a'], attempts=10)
 
 # and slow it down a bit (wait 1 second between each attempt).
 # the delay schedules the task again 1 second after the previous
-# attempt
+# attempt. without delay, schedule for task's next run will be immediately
+# TaskHeap manages the schedules if you want to use it
 task = Task(f, args['a'], attempts=10, delay=1)
 
 # and now let's make it backoff if at first it doesn't succeed
@@ -70,17 +71,61 @@ def success(task):
         return True
 
 task = Task(f, args['a'], delay=1, success_condition=success)
+```
 
-# if you want a task to run over and over forever, 10 seconds after
-# it last finished, set an unmeetable success condition and do not
-# specify attempts
+#### tasks which never succeed (on purpose)
+
+```python
+from functastic import Task
+# if you want a task to run over and over forever, say 10 seconds after
+# it last finished, set the success condition to `lambda t: None`
+# and do not specify attempts
 task = Task(f, args=['a'], delay=10,
-            success_condition=lambda t: t.result == 'kittens')
+            success_condition=lambda t: None)
 
-# Tasks can be used independently of a TaskHeap
+# this task will be run 5 times, 10 seconds after the previous run,
+# regardless of what f returns or raises
+task = Task(f, args=['a'], delay=10, attempts=5,
+            success_condition=lambda t: None)
+```
+
+#### tasks which "succeed" by failing in some way
+sometimes it makes sense to think of `success_condition` as a `break` condition.
+let's say there is a function that makes requests to a webservice. it makes sense to retry if you get a `404` because you are polling for a resource to become available, but if you get another error, like `401 unauthorized`, retrying wouldn't make sense, so we want to `break` (or "succeed") if we get a non `404` exception:
+
+```python
+import requests
+from functastic import Task
+
+def handle_resource(res):
+    pass
+
+def get_thing(url):
+    r = requests.get(url)
+    r.raise_for_status()
+    handle_resource(r.json())
+
+# every 5 seconds attempt to fetch the resource and handle it,
+# quit when there is no exception (actual success) or there is
+# a non 404 exception (call failed in a bad way, so don't try it again)
+task = Task(get_thing, args['http://whatever.com/resource/id'], delay=5,
+            success_condition=lambda t: (t.exception and '404' not in t.exception.message or
+                                         not t.exception))
+```
+
+#### using tasks without `TaskHeap`
+
+```python
+from functastic import Task
+
 task = Task(f, args['a'], attempts=10)
+
+# task.retry always starts as True
 while task.retry:
+    # calling the task calls the function
     task()
+    # at this point, task.retry may have become False depending on the task
+    # optionally sleep in between calls
     time.sleep(2)
 ```
 
